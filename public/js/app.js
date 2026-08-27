@@ -1,13 +1,15 @@
 /**
  * Main Application Orchestrator for MacFileBridge
- * Optimistic instant rendering from cache, live status updates, and multi-theme switcher.
+ * Smart Hybrid Connector: Automatically connects hosted Vercel UI to local Mac daemon (localhost:54321)
  */
 
 const App = {
-  currentTheme: 'ocean',
+  currentTheme: 'olive',
   pollInterval: null,
+  apiBase: '',
 
   init() {
+    this.detectApiBase();
     this.initTheme();
     this.bindGlobalEvents();
     this.bindModalCloseButtons();
@@ -20,6 +22,19 @@ const App = {
 
     this.checkSystemStatus();
     this.startDevicePolling();
+  },
+
+  detectApiBase() {
+    // If running hosted on Vercel or external domain, talk to the local Mac bridge at localhost:54321
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.location.hostname.startsWith('192.168.') && !window.location.hostname.startsWith('10.')) {
+      this.apiBase = 'http://localhost:54321';
+    } else {
+      this.apiBase = '';
+    }
+  },
+
+  apiUrl(path) {
+    return `${this.apiBase}${path}`;
   },
 
   renderOptimisticDeviceState() {
@@ -57,7 +72,7 @@ const App = {
       this.showToast('Capturing Android screen...', 'info');
       try {
         const timestamp = Date.now();
-        const res = await fetch(`/api/adb/screenshot?t=${timestamp}`);
+        const res = await fetch(this.apiUrl(`/api/adb/screenshot?t=${timestamp}`));
         if (res.ok) {
           const blob = await res.blob();
           const objUrl = URL.createObjectURL(blob);
@@ -79,7 +94,7 @@ const App = {
     document.getElementById('btn-restart-adb').addEventListener('click', async () => {
       this.showToast('Restarting ADB server...', 'info');
       try {
-        const res = await fetch('/api/adb/restart', { method: 'POST' });
+        const res = await fetch(this.apiUrl('/api/adb/restart'), { method: 'POST' });
         const data = await res.json();
         if (data.success) {
           this.showToast('ADB Server restarted successfully', 'success');
@@ -111,7 +126,7 @@ const App = {
   },
 
   initTheme() {
-    const saved = localStorage.getItem('mfb_theme') || 'ocean';
+    const saved = localStorage.getItem('mfb_theme') || 'olive';
     this.setTheme(saved);
   },
 
@@ -119,7 +134,6 @@ const App = {
     this.currentTheme = theme;
     localStorage.setItem('mfb_theme', theme);
     document.documentElement.setAttribute('data-theme', theme);
-    document.body.className = theme === 'light' ? 'light-theme' : 'dark-theme';
 
     const themeSelector = document.getElementById('theme-selector');
     if (themeSelector) themeSelector.value = theme;
@@ -127,7 +141,7 @@ const App = {
 
   async checkSystemStatus() {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch(this.apiUrl('/api/status'));
       const data = await res.json();
       if (!data.success) return;
 
@@ -166,7 +180,11 @@ const App = {
       }
 
     } catch (err) {
-      console.error('Status check error:', err);
+      // Local daemon is not reachable from cloud URL
+      const phoneName = document.getElementById('android-device-name');
+      if (phoneName && this.apiBase) {
+        phoneName.textContent = 'Local Daemon Idle';
+      }
     }
   },
 

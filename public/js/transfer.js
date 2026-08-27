@@ -1,6 +1,6 @@
 /**
  * Transfer Manager for MacFileBridge
- * Auto-expands progress drawer on start, renders byte counters, speed, ETA, and cancellation.
+ * Smart Hybrid Connector for local & hosted environments.
  */
 
 const TransferManager = {
@@ -32,8 +32,13 @@ const TransferManager = {
   },
 
   connectWebSocket() {
+    let wsHost = window.location.host;
+    if (App.apiBase) {
+      wsHost = 'localhost:54321';
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = `${protocol}//${wsHost}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -49,7 +54,7 @@ const TransferManager = {
         setTimeout(() => this.connectWebSocket(), 3000);
       };
     } catch (e) {
-      console.error('WS Error:', e);
+      // Ignore WS error on static view
     }
   },
 
@@ -58,12 +63,7 @@ const TransferManager = {
       this.activeTransfers.set(data.id, data);
       this.renderTransferCard(data);
       this.updateDrawerStatus();
-      
-      // Auto-expand drawer so user clearly sees the progress bar!
-      if (this.drawer) {
-        this.drawer.classList.remove('collapsed');
-      }
-
+      if (this.drawer) this.drawer.classList.remove('collapsed');
       App.showToast(`Transfer started: ${data.name}`, 'info');
     } else if (event === 'transfer_progress') {
       this.activeTransfers.set(data.id, data);
@@ -177,7 +177,7 @@ const TransferManager = {
 
   async cancelTransfer(id) {
     try {
-      const res = await fetch('/api/transfer/cancel', {
+      const res = await fetch(App.apiUrl('/api/transfer/cancel'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -289,13 +289,11 @@ const TransferManager = {
     if (!macFiles || macFiles.length === 0) return;
 
     App.showToast(`Starting transfer of ${macFiles.length} file(s) to Device...`, 'info');
-
-    // Auto-open drawer
     if (this.drawer) this.drawer.classList.remove('collapsed');
 
     for (const file of macFiles) {
       try {
-        const res = await fetch('/api/transfer/mac-to-android', {
+        const res = await fetch(App.apiUrl('/api/transfer/mac-to-android'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -317,13 +315,11 @@ const TransferManager = {
     if (!deviceFiles || deviceFiles.length === 0) return;
 
     App.showToast(`Pulling ${deviceFiles.length} file(s) to Mac...`, 'info');
-
-    // Auto-open drawer
     if (this.drawer) this.drawer.classList.remove('collapsed');
 
     for (const file of deviceFiles) {
       try {
-        const res = await fetch('/api/transfer/android-to-mac', {
+        const res = await fetch(App.apiUrl('/api/transfer/android-to-mac'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -367,7 +363,7 @@ const TransferManager = {
     }
 
     try {
-      const res = await fetch('/api/transfer/upload-to-android', {
+      const res = await fetch(App.apiUrl('/api/transfer/upload-to-android'), {
         method: 'POST',
         body: formData
       });

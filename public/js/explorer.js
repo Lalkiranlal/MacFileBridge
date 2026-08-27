@@ -1,6 +1,6 @@
 /**
  * File Explorer Logic for Mac & Android Panes
- * Robust error handling for Cloud / Vercel mode and drag-and-drop orchestration.
+ * Supports direct local calls and hybrid hosted Vercel bridge calls.
  */
 
 const Explorer = {
@@ -105,22 +105,26 @@ const Explorer = {
     this.initDragAndDrop();
   },
 
-  async safeFetchJSON(url, options = {}) {
+  async safeFetchJSON(path, options = {}) {
     try {
-      const res = await fetch(url, options);
+      const fullUrl = App.apiUrl(path);
+      const res = await fetch(fullUrl, options);
       const text = await res.text();
       try {
         return JSON.parse(text);
       } catch (e) {
-        // If HTML or 404 is returned (e.g. on Vercel cloud)
         return { 
           success: false, 
           isCloudMode: true, 
-          error: 'Cloud Preview: USB backend runs locally. Open http://localhost:54321 on your Mac.' 
+          error: 'Local Bridge is not running on localhost:54321.' 
         };
       }
     } catch (err) {
-      return { success: false, error: err.message };
+      return { 
+        success: false, 
+        isCloudMode: true, 
+        error: 'Unable to reach local Mac daemon at localhost:54321.' 
+      };
     }
   },
 
@@ -128,8 +132,8 @@ const Explorer = {
     const listEl = document.getElementById('mac-file-list');
     listEl.innerHTML = '<div style="padding:20px; text-align:center; color:var(--color-text-muted);">Loading Mac files...</div>';
 
-    const url = targetPath ? `/api/mac/files?path=${encodeURIComponent(targetPath)}` : '/api/mac/files';
-    const data = await this.safeFetchJSON(url);
+    const p = targetPath ? `/api/mac/files?path=${encodeURIComponent(targetPath)}` : '/api/mac/files';
+    const data = await this.safeFetchJSON(p);
 
     if (data.success) {
       this.macCurrentPath = data.path;
@@ -142,9 +146,10 @@ const Explorer = {
     } else {
       const msg = data.isCloudMode 
         ? `<div style="padding:32px 20px; text-align:center;">
-             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">☁️ Cloud Demo View</p>
-             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">To browse your Mac files and copy over USB cable, open:</p>
-             <a href="http://localhost:54321" style="display:inline-block; margin-top:12px; padding:8px 16px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none;">Open http://localhost:54321</a>
+             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">💻 Local Daemon Required</p>
+             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">To browse your Mac files from this hosted page, start MacFileBridge on your Mac:</p>
+             <div style="background:#EDF4E8; padding:8px 12px; border-radius:6px; font-family:monospace; font-size:12px; margin:10px auto; max-width:280px;">Double-click launch.command</div>
+             <a href="http://localhost:54321" style="display:inline-block; margin-top:6px; padding:6px 14px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none; font-size:12px;">Open Local App</a>
            </div>`
         : `<div style="padding:20px; text-align:center; color:var(--color-alert-red);">${data.error || 'Failed to load Mac files'}</div>`;
       listEl.innerHTML = msg;
@@ -171,9 +176,10 @@ const Explorer = {
     } else {
       const msg = data.isCloudMode 
         ? `<div style="padding:32px 20px; text-align:center;">
-             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">📱 USB Hardware Mode</p>
-             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">USB Debugging & ADB communicate with your physical phone via:</p>
-             <a href="http://localhost:54321" style="display:inline-block; margin-top:12px; padding:8px 16px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none;">Open http://localhost:54321</a>
+             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">📱 USB Hardware Conduit</p>
+             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">Connects to Android ADB via your local Mac bridge:</p>
+             <div style="background:#EDF4E8; padding:8px 12px; border-radius:6px; font-family:monospace; font-size:12px; margin:10px auto; max-width:280px;">http://localhost:54321</div>
+             <a href="http://localhost:54321" style="display:inline-block; margin-top:6px; padding:6px 14px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none; font-size:12px;">Open Local App</a>
            </div>`
         : `<div style="padding:20px; text-align:center; color:var(--color-alert-red);">${data.error || 'No device connected or authorized'}</div>`;
       listEl.innerHTML = msg;
@@ -477,7 +483,7 @@ const Explorer = {
     for (const f of files) formData.append('files', f);
 
     try {
-      const res = await fetch('/api/transfer/upload-to-mac', { method: 'POST', body: formData });
+      const res = await fetch(App.apiUrl('/api/transfer/upload-to-mac'), { method: 'POST', body: formData });
       const data = await res.json();
       if (data.success) {
         App.showToast(`Saved ${files.length} file(s) to Mac`, 'success');
@@ -492,10 +498,10 @@ const Explorer = {
     if (!name || !name.trim()) return;
     const basePath = pane === 'mac' ? this.macCurrentPath : this.targetCurrentPath;
     const newPath = basePath.endsWith('/') ? basePath + name : `${basePath}/${name}`;
-    const url = pane === 'mac' ? '/api/mac/mkdir' : '/api/adb/mkdir';
+    const pathUrl = pane === 'mac' ? '/api/mac/mkdir' : '/api/adb/mkdir';
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch(App.apiUrl(pathUrl), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: newPath })
@@ -513,9 +519,9 @@ const Explorer = {
   },
 
   async deleteItem(pane, itemPath) {
-    const url = pane === 'mac' ? '/api/mac/delete' : '/api/adb/delete';
+    const pathUrl = pane === 'mac' ? '/api/mac/delete' : '/api/adb/delete';
     try {
-      const res = await fetch(url, {
+      const res = await fetch(App.apiUrl(pathUrl), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: itemPath })

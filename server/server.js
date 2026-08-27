@@ -24,6 +24,17 @@ const DEFAULT_MAC_DROP_DIR = path.join(os.homedir(), 'Downloads', 'MacFileBridge
 if (!fs.existsSync(UPLOAD_TEMP_DIR)) fs.mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
 if (!fs.existsSync(DEFAULT_MAC_DROP_DIR)) fs.mkdirSync(DEFAULT_MAC_DROP_DIR, { recursive: true });
 
+// Enable CORS so hosted frontend (Vercel) can securely talk to local Mac daemon
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
