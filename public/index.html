@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="ocean">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MacFileBridge — USB & Android Transfer Studio</title>
+  <meta name="description" content="Ultra-fast file transfer between Mac, USB Android devices, flash drives, and wireless peer drop.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <!-- App Container -->
+  <div class="app-layout">
+    
+    <!-- Top Navigation Bar -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="app-logo">
+          <i data-lucide="arrow-left-right" class="logo-icon"></i>
+        </div>
+        <div class="brand-text">
+          <h1>MacFileBridge</h1>
+          <span class="version-tag">PRO v1.0</span>
+        </div>
+      </div>
+
+      <!-- Quick Status Badges -->
+      <div class="header-status-group">
+        <!-- Android Status -->
+        <div class="device-pill" id="android-status-pill">
+          <span class="status-indicator live" id="android-led"></span>
+          <i data-lucide="smartphone" class="pill-icon"></i>
+          <span class="pill-label" id="android-device-name">Detecting Phone...</span>
+          <button class="icon-btn-micro" id="btn-adb-troubleshoot" title="Device Connection Guide">
+            <i data-lucide="help-circle"></i>
+          </button>
+        </div>
+
+        <!-- USB Volume Status -->
+        <div class="device-pill" id="usb-status-pill">
+          <span class="status-indicator offline" id="usb-led"></span>
+          <i data-lucide="hard-drive" class="pill-icon"></i>
+          <span class="pill-label" id="usb-volume-name">No USB Drive</span>
+        </div>
+
+        <!-- AirBridge Wi-Fi Status -->
+        <button class="pill-button" id="btn-open-airbridge" title="Wireless AirBridge (Scan QR Code)">
+          <i data-lucide="wifi" class="pill-icon"></i>
+          <span>AirBridge (Wi-Fi Drop)</span>
+          <span class="badge-accent">QR</span>
+        </button>
+      </div>
+
+      <!-- Theme Switcher & Actions -->
+      <div class="header-actions">
+        <select id="theme-selector" class="theme-select" title="Switch UI Color Theme">
+          <option value="ocean">🌊 Ocean Deep</option>
+          <option value="midnight">🌌 Midnight Indigo</option>
+          <option value="titanium">🛸 Titanium Graphite</option>
+          <option value="light">☀️ Frost Light</option>
+        </select>
+
+        <button class="icon-btn" id="btn-refresh-all" title="Refresh All Devices & Files">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+        <button class="icon-btn" id="btn-phone-screenshot" title="Take Android Screenshot">
+          <i data-lucide="camera"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace: Dual-Pane Explorer -->
+    <main class="workspace-container">
+      
+      <!-- ================= LEFT PANE: MAC LOCAL FILES ================= -->
+      <section class="explorer-pane" id="mac-pane">
+        <!-- Pane Header -->
+        <div class="pane-header">
+          <div class="pane-title-group">
+            <div class="pane-icon mac-icon">
+              <i data-lucide="laptop"></i>
+            </div>
+            <div>
+              <h2>Mac Storage</h2>
+              <span class="subtext" id="mac-storage-hint">macOS Local Disk</span>
+            </div>
+          </div>
+
+          <div class="pane-actions">
+            <button class="btn btn-sm" id="mac-btn-new-folder" title="New Folder on Mac">
+              <i data-lucide="folder-plus"></i> New Folder
+            </button>
+            <button class="btn btn-sm btn-primary" id="mac-btn-send-to-device" title="Send Selected Files to Device">
+              <i data-lucide="arrow-right"></i> Send Selected
+            </button>
+          </div>
+        </div>
+
+        <!-- Shortcuts Bar -->
+        <div class="shortcuts-strip" id="mac-shortcuts">
+          <!-- Populated dynamically via JS -->
+        </div>
+
+        <!-- Breadcrumb & Search Bar -->
+        <div class="path-toolbar">
+          <div class="breadcrumb-container" id="mac-breadcrumbs">
+            <!-- Breadcrumbs -->
+          </div>
+          <div class="search-box">
+            <i data-lucide="search"></i>
+            <input type="text" id="mac-search-input" placeholder="Search Mac files...">
+          </div>
+        </div>
+
+        <!-- Category Filter Tabs -->
+        <div class="filter-strip" id="mac-filter-tabs">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="image">Photos</button>
+          <button class="filter-chip" data-filter="video">Videos</button>
+          <button class="filter-chip" data-filter="audio">Music</button>
+          <button class="filter-chip" data-filter="document">Docs</button>
+          <button class="filter-chip" data-filter="apk">APKs / Apps</button>
+        </div>
+
+        <!-- Drag & Drop Hint Banner -->
+        <div class="drag-hint-banner" id="mac-drag-banner">
+          <i data-lucide="hand"></i>
+          <span>Drag files from here &amp; drop onto Device pane, or drop Finder files here</span>
+        </div>
+
+        <!-- File List Dropzone -->
+        <div class="file-view-container drop-zone" id="mac-file-container">
+          <div class="drop-overlay" id="mac-drop-overlay">
+            <i data-lucide="download-cloud"></i>
+            <h3>Drop Files Here to Save on Mac</h3>
+            <p>Will be saved to current folder</p>
+          </div>
+          <div class="file-table-header">
+            <div class="col-select"><input type="checkbox" id="mac-select-all" title="Select All"></div>
+            <div class="col-name" data-sort="name">Name <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-size" data-sort="size">Size <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-date" data-sort="date">Modified <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-actions">Actions</div>
+          </div>
+          <div class="file-list" id="mac-file-list">
+            <!-- Rendered by explorer.js -->
+          </div>
+        </div>
+
+        <!-- Pane Footer Stats -->
+        <div class="pane-footer">
+          <span id="mac-item-count">0 items</span>
+          <span id="mac-selected-count">0 selected</span>
+        </div>
+      </section>
+
+      <!-- Central Transfer Action Column -->
+      <div class="workspace-divider">
+        <div class="divider-controls">
+          <button class="circle-action-btn" id="btn-transfer-mac-to-target" title="Send Selected Mac Files to Device">
+            <i data-lucide="arrow-right"></i>
+          </button>
+          <button class="circle-action-btn" id="btn-transfer-target-to-mac" title="Pull Selected Device Files to Mac">
+            <i data-lucide="arrow-left"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ================= RIGHT PANE: TARGET DEVICE (ANDROID / USB) ================= -->
+      <section class="explorer-pane" id="target-pane">
+        <!-- Pane Header -->
+        <div class="pane-header">
+          <div class="pane-title-group">
+            <div class="pane-icon device-icon" id="target-pane-icon">
+              <i data-lucide="smartphone"></i>
+            </div>
+            <div>
+              <div class="target-select-wrapper">
+                <select id="target-device-selector" class="select-dropdown">
+                  <option value="android">📱 Android Storage (USB/ADB)</option>
+                  <option value="usb">💾 USB External Drive</option>
+                </select>
+              </div>
+              <div class="storage-mini-meter" id="target-storage-bar-wrap">
+                <div class="mini-meter-fill" id="target-storage-meter" style="width: 45%;"></div>
+                <span class="meter-text" id="target-storage-text">Loading storage info...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pane-actions">
+            <button class="btn btn-sm" id="target-btn-new-folder" title="Create Folder on Device">
+              <i data-lucide="folder-plus"></i> New Folder
+            </button>
+            <button class="btn btn-sm btn-accent" id="target-btn-upload-picker" title="Upload Files from Mac">
+              <i data-lucide="upload-cloud"></i> Upload
+            </button>
+            <button class="btn btn-sm btn-primary" id="target-btn-send-to-mac" title="Pull Selected to Mac">
+              <i data-lucide="arrow-left"></i> Pull Selected
+            </button>
+            <input type="file" id="target-hidden-file-input" multiple style="display: none;">
+          </div>
+        </div>
+
+        <!-- Device Quick Shortcuts -->
+        <div class="shortcuts-strip" id="target-shortcuts">
+          <button class="shortcut-chip active" data-path="/storage/emulated/0"><i data-lucide="home"></i> Root</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/DCIM"><i data-lucide="camera"></i> DCIM (Photos)</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/Download"><i data-lucide="download"></i> Downloads</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/Pictures"><i data-lucide="image"></i> Pictures</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/Music"><i data-lucide="music"></i> Music</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/Documents"><i data-lucide="file-text"></i> Documents</button>
+          <button class="shortcut-chip" data-path="/storage/emulated/0/Movies"><i data-lucide="film"></i> Movies</button>
+        </div>
+
+        <!-- Breadcrumb & Search Bar -->
+        <div class="path-toolbar">
+          <div class="breadcrumb-container" id="target-breadcrumbs">
+            <!-- Breadcrumbs -->
+          </div>
+          <div class="search-box">
+            <i data-lucide="search"></i>
+            <input type="text" id="target-search-input" placeholder="Search device storage...">
+          </div>
+        </div>
+
+        <!-- Category Filter Tabs -->
+        <div class="filter-strip" id="target-filter-tabs">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="image">Photos</button>
+          <button class="filter-chip" data-filter="video">Videos</button>
+          <button class="filter-chip" data-filter="audio">Music</button>
+          <button class="filter-chip" data-filter="document">Docs</button>
+          <button class="filter-chip" data-filter="apk">APKs</button>
+        </div>
+
+        <!-- Drag & Drop Hint Banner -->
+        <div class="drag-hint-banner" id="target-drag-banner">
+          <i data-lucide="hand"></i>
+          <span>Drag files from Mac pane or macOS Finder and drop here to Push over USB!</span>
+        </div>
+
+        <!-- File List Dropzone -->
+        <div class="file-view-container drop-zone" id="target-file-container">
+          <div class="drop-overlay" id="target-drop-overlay">
+            <i data-lucide="upload-cloud"></i>
+            <h3>Drop Files to Push to Android</h3>
+            <p>Will be transferred immediately over high-speed USB</p>
+          </div>
+          <div class="file-table-header">
+            <div class="col-select"><input type="checkbox" id="target-select-all" title="Select All"></div>
+            <div class="col-name" data-sort="name">Name <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-size" data-sort="size">Size <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-date" data-sort="date">Modified <i data-lucide="chevrons-up-down"></i></div>
+            <div class="col-actions">Actions</div>
+          </div>
+          <div class="file-list" id="target-file-list">
+            <!-- Rendered by explorer.js -->
+          </div>
+        </div>
+
+        <!-- Pane Footer Stats -->
+        <div class="pane-footer">
+          <span id="target-item-count">0 items</span>
+          <span id="target-selected-count">0 selected</span>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Floating Transfer Status Bar / Drawer -->
+    <div class="transfer-drawer collapsed" id="transfer-drawer">
+      <div class="drawer-handle" id="transfer-drawer-toggle">
+        <div class="handle-left">
+          <div class="pulse-indicator" id="transfer-pulse"></div>
+          <i data-lucide="activity" class="drawer-icon"></i>
+          <span class="drawer-title" id="transfer-drawer-summary">Transfers: Idle</span>
+        </div>
+        <div class="handle-right">
+          <span class="transfer-speed-badge" id="global-speed-badge" style="display:none;">0.0 MB/s</span>
+          <i data-lucide="chevron-up" class="drawer-chevron" id="drawer-chevron-icon"></i>
+        </div>
+      </div>
+      <div class="drawer-content">
+        <div class="transfer-items-list" id="transfer-queue-list">
+          <div class="empty-queue-msg">No active transfers</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================= MODALS ================= -->
+
+  <!-- 1. AirBridge Wireless Sharing Modal -->
+  <div class="modal-backdrop" id="modal-airbridge">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="wifi" class="modal-title-icon"></i>
+          <h3>AirBridge (Wireless Transfer)</h3>
+        </div>
+        <button class="modal-close-btn" data-close="modal-airbridge"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body airbridge-grid">
+        <div class="qr-col">
+          <div class="qr-frame">
+            <img id="airbridge-qr-img" src="" alt="AirBridge QR Code">
+          </div>
+          <p class="qr-hint">Scan with Phone Camera or iPad to transfer files instantly without cables</p>
+        </div>
+        <div class="airbridge-info-col">
+          <h4>Connect via Local Wi-Fi</h4>
+          <p class="subtext">Make sure both devices are connected to the same Wi-Fi network.</p>
+          
+          <div class="link-box">
+            <input type="text" id="airbridge-url-input" readonly value="Loading...">
+            <button class="btn btn-sm" id="btn-copy-airbridge-url"><i data-lucide="copy"></i> Copy</button>
+          </div>
+
+          <div class="features-list">
+            <div class="feat-item"><i data-lucide="check-circle-2"></i> <span>Zero installation on mobile devices</span></div>
+            <div class="feat-item"><i data-lucide="check-circle-2"></i> <span>Gigabit LAN transfer speeds</span></div>
+            <div class="feat-item"><i data-lucide="check-circle-2"></i> <span>Works with Android, iPhone, Windows &amp; Mac</span></div>
+            <div class="feat-item"><i data-lucide="check-circle-2"></i> <span>Direct drop to <code>~/Downloads/MacFileBridge_Received</code></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-close="modal-airbridge">Close</button>
+        <button class="btn btn-primary" id="btn-open-airbridge-browser">Open in Browser</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Android ADB Setup & Troubleshooting Guide Modal -->
+  <div class="modal-backdrop" id="modal-adb-guide">
+    <div class="modal-card modal-wide">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="settings" class="modal-title-icon"></i>
+          <h3>Android USB Connection Guide</h3>
+        </div>
+        <button class="modal-close-btn" data-close="modal-adb-guide"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="guide-steps">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <h4>Enable Developer Options</h4>
+            <p>Open <strong>Settings &gt; About Phone</strong> on Android. Tap <strong>Build Number</strong> 7 times until you see <em>"You are now a developer!"</em>.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <h4>Turn ON USB Debugging</h4>
+            <p>Go to <strong>Settings &gt; System &gt; Developer Options</strong> and switch on <strong>USB Debugging</strong>.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-badge">3</div>
+            <h4>Allow USB Debugging Prompt</h4>
+            <p>Unlock phone, plug in USB cable, and select <strong>"Always allow from this computer"</strong> when prompted.</p>
+          </div>
+        </div>
+
+        <div class="troubleshoot-box">
+          <div class="troubleshoot-info">
+            <i data-lucide="alert-triangle"></i>
+            <div>
+              <strong>Device not showing up?</strong>
+              <p>Try restarting the ADB daemon or replugging your USB cable.</p>
+            </div>
+          </div>
+          <button class="btn btn-warning btn-sm" id="btn-restart-adb">
+            <i data-lucide="refresh-ccw"></i> Restart ADB Server
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-close="modal-adb-guide">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Media & File Previewer Modal -->
+  <div class="modal-backdrop" id="modal-preview">
+    <div class="modal-card modal-preview-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="eye" class="modal-title-icon"></i>
+          <h3 id="preview-file-title">File Preview</h3>
+        </div>
+        <button class="modal-close-btn" data-close="modal-preview"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body preview-body" id="preview-container">
+        <!-- Media inserted dynamically -->
+      </div>
+      <div class="modal-footer">
+        <span class="preview-meta" id="preview-meta-info">Loading...</span>
+        <button class="btn" data-close="modal-preview">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. New Folder / Input Modal -->
+  <div class="modal-backdrop" id="modal-prompt">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="folder-plus" class="modal-title-icon"></i>
+          <h3 id="prompt-title">New Folder</h3>
+        </div>
+        <button class="modal-close-btn" data-close="modal-prompt"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <label id="prompt-label" for="prompt-input">Folder Name:</label>
+        <input type="text" id="prompt-input" class="text-input" placeholder="e.g. Vacation Photos">
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-close="modal-prompt">Cancel</button>
+        <button class="btn btn-primary" id="btn-prompt-confirm">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/previews.js"></script>
+  <script src="js/transfer.js"></script>
+  <script src="js/explorer.js"></script>
+  <script src="js/airbridge.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AirBridge — WebDrop to Mac</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.3);
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+    body {
+      background: radial-gradient(circle at top, #1e1b4b 0%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 26px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .connected-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--success);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } }
+    
+    .card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      margin-bottom: 20px;
+    }
+    .dropzone {
+      border: 2px dashed rgba(59, 130, 246, 0.5);
+      border-radius: 16px;
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(59, 130, 246, 0.05);
+    }
+    .dropzone:hover, .dropzone.active {
+      border-color: #60a5fa;
+      background: rgba(59, 130, 246, 0.15);
+      transform: scale(1.01);
+    }
+    .dropzone-icon {
+      width: 48px;
+      height: 48px;
+      color: #60a5fa;
+      margin-bottom: 12px;
+    }
+    .btn-pick {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 10px 22px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: white;
+      font-weight: 600;
+      border-radius: 10px;
+      font-size: 14px;
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+    }
+    .upload-progress-list {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .upload-item {
+      background: rgba(15, 23, 42, 0.6);
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .upload-item-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .prog-bar-bg {
+      height: 6px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .prog-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      width: 0%;
+      transition: width 0.2s ease;
+    }
+    .footer-note {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AirBridge WebDrop</h1>
+    <div class="connected-pill">
+      <div class="live-dot"></div>
+      <span id="target-mac-name">Connected to Mac</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="dropzone" id="mobile-dropzone">
+      <i data-lucide="upload-cloud" class="dropzone-icon"></i>
+      <h3>Send Photos & Files to Mac</h3>
+      <p style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">Tap below to pick from gallery or files</p>
+      <div class="btn-pick">Select Files</div>
+      <input type="file" id="mobile-file-input" multiple style="display: none;">
+    </div>
+
+    <div class="upload-progress-list" id="upload-list"></div>
+  </div>
+
+  <p class="footer-note">Files are received directly into your Mac's Downloads folder.</p>
+
+  <script>
+    lucide.createIcons();
+    const dropzone = document.getElementById('mobile-dropzone');
+    const fileInput = document.getElementById('mobile-file-input');
+    const uploadList = document.getElementById('upload-list');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        uploadFiles(Array.from(e.target.files));
+      }
+    });
+
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('active'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('active'); });
+    });
+    dropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files.length > 0) {
+        uploadFiles(Array.from(e.dataTransfer.files));
+      }
+    });
+
+    async function uploadFiles(files) {
+      for (const file of files) {
+        const item = document.createElement('div');
+        item.className = 'upload-item';
+        item.innerHTML = `
+          <div class="upload-item-header">
+            <span>${file.name}</span>
+            <span class="pct">0%</span>
+          </div>
+          <div class="prog-bar-bg"><div class="prog-bar-fill"></div></div>
+        `;
+        uploadList.prepend(item);
+
+        const formData = new FormData();
+        formData.append('files', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/transfer/upload-to-mac');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            item.querySelector('.prog-bar-fill').style.width = percent + '%';
+            item.querySelector('.pct').textContent = percent + '%';
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            item.querySelector('.pct').textContent = '✅ Done';
+            item.querySelector('.prog-bar-fill').style.background = '#10b981';
+          } else {
+            item.querySelector('.pct').textContent = '❌ Failed';
+          }
+        };
+
+        xhr.send(formData);
+      }
+    }
+  </script>
+</body>
+</html>
