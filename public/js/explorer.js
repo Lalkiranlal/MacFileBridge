@@ -1,428 +1,353 @@
 /**
- * Explorer Manager for MacFileBridge
- * Manages dual-pane navigation, search, sort, selection, and interactive drag-and-drop.
+ * File Explorer Logic for Mac & Android Panes
+ * Robust error handling for Cloud / Vercel mode and drag-and-drop orchestration.
  */
 
 const Explorer = {
-  // Mac State
   macCurrentPath: '',
-  macItems: [],
-  macSelected: new Set(),
-  macFilter: 'all',
-  macSearch: '',
-
-  // Target Device State
-  targetMode: 'android', // 'android' or 'usb'
   targetCurrentPath: '/storage/emulated/0',
-  targetItems: [],
+  macFiles: [],
+  targetFiles: [],
+  macSelected: new Set(),
   targetSelected: new Set(),
+  macFilter: 'all',
   targetFilter: 'all',
-  targetSearch: '',
-
-  // Drag State
-  draggedData: null,
+  macSort: { col: 'name', asc: true },
+  targetSort: { col: 'name', asc: true },
 
   init() {
-    this.bindEvents();
-    this.bindInterPaneDragAndDrop();
+    this.bindDOM();
     this.loadMacShortcuts();
-    this.loadMacFiles();
-    this.loadTargetFiles();
+    this.refreshMac();
+    this.refreshTarget();
   },
 
-  bindEvents() {
-    // Mac Pane Actions
-    document.getElementById('mac-btn-new-folder').addEventListener('click', () => {
-      this.promptNewFolder('mac');
-    });
-
-    document.getElementById('mac-btn-send-to-device').addEventListener('click', () => {
-      const selected = this.getSelectedItems('mac');
-      if (selected.length === 0) {
-        App.showToast('Select files on Mac first or click the send button on a row', 'info');
-        return;
-      }
-      TransferManager.sendMacFilesToDevice(selected, this.targetCurrentPath);
-    });
-
-    // Divider Central Transfer Buttons
-    document.getElementById('btn-transfer-mac-to-target').addEventListener('click', () => {
-      const selected = this.getSelectedItems('mac');
-      if (selected.length === 0) {
-        App.showToast('Select files on Mac first', 'info');
-        return;
-      }
-      TransferManager.sendMacFilesToDevice(selected, this.targetCurrentPath);
-    });
-
-    document.getElementById('btn-transfer-target-to-mac').addEventListener('click', () => {
-      const selected = this.getSelectedItems('target');
-      if (selected.length === 0) {
-        App.showToast('Select files on Device first', 'info');
-        return;
-      }
-      TransferManager.sendDeviceFilesToMac(selected, this.macCurrentPath);
-    });
-
-    // Target Pane Actions
-    document.getElementById('target-btn-new-folder').addEventListener('click', () => {
-      this.promptNewFolder('target');
-    });
-
-    const targetSendToMacBtn = document.getElementById('target-btn-send-to-mac');
-    if (targetSendToMacBtn) {
-      targetSendToMacBtn.addEventListener('click', () => {
-        const selected = this.getSelectedItems('target');
-        if (selected.length === 0) {
-          App.showToast('Select files on Device first', 'info');
-          return;
-        }
-        TransferManager.sendDeviceFilesToMac(selected, this.macCurrentPath);
-      });
-    }
-
-    document.getElementById('target-device-selector').addEventListener('change', (e) => {
-      this.targetMode = e.target.value;
-      if (this.targetMode === 'android') {
-        this.targetCurrentPath = '/storage/emulated/0';
-        document.getElementById('target-shortcuts').style.display = 'flex';
-      } else {
-        this.targetCurrentPath = '/Volumes';
-        document.getElementById('target-shortcuts').style.display = 'none';
-      }
-      this.loadTargetFiles();
-    });
-
+  bindDOM() {
     // Search Inputs
     document.getElementById('mac-search-input').addEventListener('input', (e) => {
-      this.macSearch = e.target.value.toLowerCase();
-      this.renderMacList();
+      this.renderFileList('mac', this.filterFiles(this.macFiles, e.target.value, this.macFilter));
     });
 
     document.getElementById('target-search-input').addEventListener('input', (e) => {
-      this.targetSearch = e.target.value.toLowerCase();
-      this.renderTargetList();
+      this.renderFileList('target', this.filterFiles(this.targetFiles, e.target.value, this.targetFilter));
     });
 
-    // Filter Chips
-    document.querySelectorAll('#mac-filter-tabs .filter-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#mac-filter-tabs .filter-chip').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.macFilter = btn.dataset.filter;
-        this.renderMacList();
+    // Filter Tabs
+    document.querySelectorAll('#mac-filter-tabs .filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('#mac-filter-tabs .filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        this.macFilter = chip.dataset.filter;
+        this.renderFileList('mac', this.filterFiles(this.macFiles, document.getElementById('mac-search-input').value, this.macFilter));
       });
     });
 
-    document.querySelectorAll('#target-filter-tabs .filter-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#target-filter-tabs .filter-chip').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.targetFilter = btn.dataset.filter;
-        this.renderTargetList();
+    document.querySelectorAll('#target-filter-tabs .filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('#target-filter-tabs .filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        this.targetFilter = chip.dataset.filter;
+        this.renderFileList('target', this.filterFiles(this.targetFiles, document.getElementById('target-search-input').value, this.targetFilter));
       });
     });
 
-    // Target Shortcuts
-    document.querySelectorAll('#target-shortcuts .shortcut-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#target-shortcuts .shortcut-chip').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.targetCurrentPath = btn.dataset.path;
-        this.loadTargetFiles();
+    // Target Selector
+    const targetSelector = document.getElementById('target-device-selector');
+    if (targetSelector) {
+      targetSelector.addEventListener('change', (e) => {
+        if (e.target.value === 'android') {
+          this.targetCurrentPath = '/storage/emulated/0';
+          this.refreshTarget();
+        } else if (e.target.value === 'usb') {
+          this.loadUSBVolumes();
+        }
+      });
+    }
+
+    // Transfer Buttons
+    document.getElementById('mac-btn-send-to-device').addEventListener('click', () => {
+      const selected = this.macFiles.filter(f => this.macSelected.has(f.path));
+      if (selected.length === 0) return App.showToast('Please select Mac files to send', 'info');
+      TransferManager.sendMacFilesToDevice(selected, this.targetCurrentPath);
+    });
+
+    document.getElementById('btn-transfer-mac-to-target').addEventListener('click', () => {
+      const selected = this.macFiles.filter(f => this.macSelected.has(f.path));
+      if (selected.length === 0) return App.showToast('Please select Mac files to send', 'info');
+      TransferManager.sendMacFilesToDevice(selected, this.targetCurrentPath);
+    });
+
+    document.getElementById('target-btn-send-to-mac').addEventListener('click', () => {
+      const selected = this.targetFiles.filter(f => this.targetSelected.has(f.path));
+      if (selected.length === 0) return App.showToast('Please select Device files to pull', 'info');
+      TransferManager.sendDeviceFilesToMac(selected, this.macCurrentPath);
+    });
+
+    document.getElementById('btn-transfer-target-to-mac').addEventListener('click', () => {
+      const selected = this.targetFiles.filter(f => this.targetSelected.has(f.path));
+      if (selected.length === 0) return App.showToast('Please select Device files to pull', 'info');
+      TransferManager.sendDeviceFilesToMac(selected, this.macCurrentPath);
+    });
+
+    // New Folder Buttons
+    document.getElementById('mac-btn-new-folder').addEventListener('click', () => {
+      this.showPromptModal('Create New Folder on Mac', (name) => {
+        this.createFolder('mac', name);
       });
     });
 
-    // Select All
-    document.getElementById('mac-select-all').addEventListener('change', (e) => {
-      this.toggleSelectAll('mac', e.target.checked);
+    document.getElementById('target-btn-new-folder').addEventListener('click', () => {
+      this.showPromptModal('Create New Folder on Device', (name) => {
+        this.createFolder('target', name);
+      });
     });
 
-    document.getElementById('target-select-all').addEventListener('change', (e) => {
-      this.toggleSelectAll('target', e.target.checked);
-    });
+    this.initDragAndDrop();
   },
 
-  // ================= DRAG & DROP ENGINE =================
-
-  bindInterPaneDragAndDrop() {
-    // 1. Drop on Target Pane (from Mac or OS Finder)
-    const targetDropContainer = document.getElementById('target-file-container');
-    const targetDropOverlay = document.getElementById('target-drop-overlay');
-
-    targetDropContainer.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      if (!this.draggedData || this.draggedData.source === 'mac') {
-        targetDropOverlay.classList.add('active');
+  async safeFetchJSON(url, options = {}) {
+    try {
+      const res = await fetch(url, options);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        // If HTML or 404 is returned (e.g. on Vercel cloud)
+        return { 
+          success: false, 
+          isCloudMode: true, 
+          error: 'Cloud Preview: USB backend runs locally. Open http://localhost:54321 on your Mac.' 
+        };
       }
-    });
-
-    targetDropContainer.addEventListener('dragleave', (e) => {
-      if (e.relatedTarget && !targetDropContainer.contains(e.relatedTarget)) {
-        targetDropOverlay.classList.remove('active');
-      }
-    });
-
-    targetDropContainer.addEventListener('drop', (e) => {
-      e.preventDefault();
-      targetDropOverlay.classList.remove('active');
-
-      // Check if dropped from Finder (files object)
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        TransferManager.uploadBrowserFilesToDevice(Array.from(e.dataTransfer.files), this.targetCurrentPath);
-        return;
-      }
-
-      // Check if dragged from Mac Pane
-      if (this.draggedData && this.draggedData.source === 'mac') {
-        const items = this.draggedData.items;
-        TransferManager.sendMacFilesToDevice(items, this.targetCurrentPath);
-        this.draggedData = null;
-      }
-    });
-
-    // 2. Drop on Mac Pane (from Target Pane or OS Finder)
-    const macDropContainer = document.getElementById('mac-file-container');
-    const macDropOverlay = document.getElementById('mac-drop-overlay');
-
-    macDropContainer.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      if (this.draggedData && this.draggedData.source === 'target') {
-        macDropOverlay.classList.add('active');
-      }
-    });
-
-    macDropContainer.addEventListener('dragleave', (e) => {
-      if (e.relatedTarget && !macDropContainer.contains(e.relatedTarget)) {
-        macDropOverlay.classList.remove('active');
-      }
-    });
-
-    macDropContainer.addEventListener('drop', (e) => {
-      e.preventDefault();
-      macDropOverlay.classList.remove('active');
-
-      // Check if dropped from Device Pane to Mac
-      if (this.draggedData && this.draggedData.source === 'target') {
-        const items = this.draggedData.items;
-        TransferManager.sendDeviceFilesToMac(items, this.macCurrentPath);
-        this.draggedData = null;
-      }
-    });
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   },
 
-  // ================= MAC FILE METHODS =================
+  async refreshMac(targetPath = '') {
+    const listEl = document.getElementById('mac-file-list');
+    listEl.innerHTML = '<div style="padding:20px; text-align:center; color:var(--color-text-muted);">Loading Mac files...</div>';
+
+    const url = targetPath ? `/api/mac/files?path=${encodeURIComponent(targetPath)}` : '/api/mac/files';
+    const data = await this.safeFetchJSON(url);
+
+    if (data.success) {
+      this.macCurrentPath = data.path;
+      this.macFiles = data.items || [];
+      this.macSelected.clear();
+      this.renderBreadcrumbs('mac', data.path);
+      this.renderFileList('mac', this.macFiles);
+      document.getElementById('mac-item-count').textContent = `${this.macFiles.length} items`;
+      this.updateSelectedCount('mac');
+    } else {
+      const msg = data.isCloudMode 
+        ? `<div style="padding:32px 20px; text-align:center;">
+             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">☁️ Cloud Demo View</p>
+             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">To browse your Mac files and copy over USB cable, open:</p>
+             <a href="http://localhost:54321" style="display:inline-block; margin-top:12px; padding:8px 16px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none;">Open http://localhost:54321</a>
+           </div>`
+        : `<div style="padding:20px; text-align:center; color:var(--color-alert-red);">${data.error || 'Failed to load Mac files'}</div>`;
+      listEl.innerHTML = msg;
+    }
+  },
+
+  async refreshTarget(targetPath = '') {
+    const listEl = document.getElementById('target-file-list');
+    listEl.innerHTML = '<div style="padding:20px; text-align:center; color:var(--color-text-muted);">Loading Device files...</div>';
+
+    const p = targetPath || this.targetCurrentPath || '/storage/emulated/0';
+    const url = `/api/adb/files?path=${encodeURIComponent(p)}`;
+    const data = await this.safeFetchJSON(url);
+
+    if (data.success) {
+      this.targetCurrentPath = data.path;
+      this.targetFiles = data.items || [];
+      this.targetSelected.clear();
+      this.renderBreadcrumbs('target', data.path);
+      this.renderFileList('target', this.targetFiles);
+      document.getElementById('target-item-count').textContent = `${this.targetFiles.length} items`;
+      this.updateSelectedCount('target');
+      this.fetchStorageInfo();
+    } else {
+      const msg = data.isCloudMode 
+        ? `<div style="padding:32px 20px; text-align:center;">
+             <p style="font-weight:700; color:var(--color-primary); font-size:15px; margin-bottom:8px;">📱 USB Hardware Mode</p>
+             <p style="font-size:13px; color:var(--color-text-muted); line-height:1.5;">USB Debugging & ADB communicate with your physical phone via:</p>
+             <a href="http://localhost:54321" style="display:inline-block; margin-top:12px; padding:8px 16px; background:var(--color-primary); color:white; border-radius:6px; font-weight:700; text-decoration:none;">Open http://localhost:54321</a>
+           </div>`
+        : `<div style="padding:20px; text-align:center; color:var(--color-alert-red);">${data.error || 'No device connected or authorized'}</div>`;
+      listEl.innerHTML = msg;
+    }
+  },
+
+  async fetchStorageInfo() {
+    const data = await this.safeFetchJSON('/api/adb/storage');
+    if (data.success && data.storage) {
+      const s = data.storage;
+      const meter = document.getElementById('target-storage-meter');
+      const text = document.getElementById('target-storage-text');
+      if (meter && text) {
+        meter.style.width = s.percent || '50%';
+        text.textContent = `${s.free} free of ${s.total}`;
+      }
+    }
+  },
 
   async loadMacShortcuts() {
-    try {
-      const res = await fetch('/api/mac/shortcuts');
-      const data = await res.json();
-      if (data.success) {
-        const strip = document.getElementById('mac-shortcuts');
-        strip.innerHTML = '';
-        data.shortcuts.forEach((sc, idx) => {
-          const btn = document.createElement('button');
-          btn.className = `shortcut-chip ${idx === 0 ? 'active' : ''}`;
-          btn.innerHTML = `<i data-lucide="${sc.icon}"></i> ${sc.name}`;
-          btn.addEventListener('click', () => {
-            document.querySelectorAll('#mac-shortcuts .shortcut-chip').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            this.macCurrentPath = sc.path;
-            this.loadMacFiles();
-          });
-          strip.appendChild(btn);
+    const data = await this.safeFetchJSON('/api/mac/shortcuts');
+    if (data.success && data.shortcuts) {
+      const container = document.getElementById('mac-shortcuts');
+      container.innerHTML = '';
+      data.shortcuts.forEach((sc, idx) => {
+        const chip = document.createElement('button');
+        chip.className = `shortcut-chip ${idx === 0 ? 'active' : ''}`;
+        chip.innerHTML = `<i data-lucide="${sc.icon}"></i> ${sc.name}`;
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('#mac-shortcuts .shortcut-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          this.refreshMac(sc.path);
         });
-        lucide.createIcons();
-      }
-    } catch (e) {}
-  },
-
-  async loadMacFiles(pathParam) {
-    const listEl = document.getElementById('mac-file-list');
-    listEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Loading files...</div>';
-
-    const url = pathParam ? `/api/mac/files?path=${encodeURIComponent(pathParam)}` : '/api/mac/files';
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.success) {
-        this.macCurrentPath = data.path;
-        this.macItems = data.items || [];
-        this.macSelected.clear();
-        document.getElementById('mac-select-all').checked = false;
-        this.renderMacBreadcrumbs();
-        this.renderMacList();
-      } else {
-        listEl.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--danger);">${data.error || 'Failed to read directory'}</div>`;
-      }
-    } catch (err) {
-      listEl.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--danger);">${err.message}</div>`;
+        container.appendChild(chip);
+      });
+      lucide.createIcons();
     }
   },
 
-  renderMacBreadcrumbs() {
-    const wrap = document.getElementById('mac-breadcrumbs');
-    wrap.innerHTML = '';
+  async loadUSBVolumes() {
+    const data = await this.safeFetchJSON('/api/usb/volumes');
+    if (data.success && data.volumes) {
+      const listEl = document.getElementById('target-file-list');
+      const ext = data.volumes.filter(v => v.isUSB);
+      if (ext.length === 0) {
+        listEl.innerHTML = '<div style="padding:20px; text-align:center; color:var(--color-text-muted);">No external USB storage found under /Volumes</div>';
+        return;
+      }
+      this.refreshTarget(ext[0].path);
+    }
+  },
 
-    const parts = this.macCurrentPath.split('/').filter(Boolean);
-    let accum = '';
+  renderBreadcrumbs(pane, fullPath) {
+    const container = document.getElementById(`${pane}-breadcrumbs`);
+    container.innerHTML = '';
+
+    const parts = fullPath.split('/').filter(Boolean);
+    let cumulative = '';
 
     const rootItem = document.createElement('span');
     rootItem.className = 'breadcrumb-item';
-    rootItem.textContent = '/';
-    rootItem.addEventListener('click', () => this.loadMacFiles('/'));
-    wrap.appendChild(rootItem);
+    rootItem.textContent = pane === 'mac' ? '~' : '/';
+    rootItem.addEventListener('click', () => {
+      pane === 'mac' ? this.refreshMac('/') : this.refreshTarget('/storage/emulated/0');
+    });
+    container.appendChild(rootItem);
 
-    parts.forEach((part, index) => {
-      accum += '/' + part;
-      const thisPath = accum;
-      
+    parts.forEach((p, idx) => {
+      cumulative += '/' + p;
+      const curPath = cumulative;
       const sep = document.createElement('span');
-      sep.textContent = '>';
-      wrap.appendChild(sep);
+      sep.textContent = '/';
+      sep.style.color = 'var(--color-text-muted)';
+      container.appendChild(sep);
 
       const item = document.createElement('span');
-      const isCurrent = index === parts.length - 1;
-      item.className = `breadcrumb-item ${isCurrent ? 'current' : ''}`;
-      item.textContent = part;
-      
-      if (!isCurrent) {
-        item.addEventListener('click', () => this.loadMacFiles(thisPath));
-      }
-      wrap.appendChild(item);
+      item.className = `breadcrumb-item ${idx === parts.length - 1 ? 'current' : ''}`;
+      item.textContent = p;
+      item.addEventListener('click', () => {
+        pane === 'mac' ? this.refreshMac(curPath) : this.refreshTarget(curPath);
+      });
+      container.appendChild(item);
     });
   },
 
-  renderMacList() {
-    const listEl = document.getElementById('mac-file-list');
+  renderFileList(pane, files) {
+    const listEl = document.getElementById(`${pane}-file-list`);
     listEl.innerHTML = '';
 
-    let filtered = this.macItems.filter(item => {
-      const matchSearch = !this.macSearch || item.name.toLowerCase().includes(this.macSearch);
-      const matchFilter = this.macFilter === 'all' || item.type === this.macFilter || (item.isDirectory && this.macFilter === 'all');
-      return matchSearch && matchFilter;
-    });
-
-    document.getElementById('mac-item-count').textContent = `${filtered.length} items`;
-    document.getElementById('mac-selected-count').textContent = `${this.macSelected.size} selected`;
-
-    if (filtered.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center; padding: 30px; color: var(--text-muted); font-size: 13px;">No files found</div>';
+    if (!files || files.length === 0) {
+      listEl.innerHTML = '<div style="padding:30px; text-align:center; color:var(--color-text-muted);">Folder is empty</div>';
       return;
     }
 
-    filtered.forEach(item => {
+    files.forEach(file => {
       const row = document.createElement('div');
-      row.className = `file-row ${this.macSelected.has(item.path) ? 'selected' : ''}`;
-      row.setAttribute('draggable', 'true');
+      row.className = 'file-row';
+      row.draggable = true;
+      row.dataset.path = file.path;
+      row.dataset.isDir = file.isDirectory;
+      row.dataset.pane = pane;
 
-      const iconClass = this.getIconForType(item.type, item.isDirectory);
-      const isChecked = this.macSelected.has(item.path);
+      const isChecked = pane === 'mac' ? this.macSelected.has(file.path) : this.targetSelected.has(file.path);
+      if (isChecked) row.classList.add('selected');
+
+      const transferIcon = pane === 'mac' ? 'arrow-right' : 'arrow-left';
+      const transferTitle = pane === 'mac' ? 'Send to Phone' : 'Pull to Mac';
 
       row.innerHTML = `
-        <div class="col-select"><input type="checkbox" ${isChecked ? 'checked' : ''}></div>
-        <div class="col-name" title="${item.name}">
-          <i data-lucide="${iconClass}" class="file-icon ${item.type}"></i>
-          <span class="file-name-text">${item.name}</span>
+        <div class="col-select">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} class="file-chk">
         </div>
-        <div class="col-size">${item.formattedSize}</div>
-        <div class="col-date">${item.date}</div>
+        <div class="col-name" title="${file.name}">
+          <i data-lucide="${this.getIconForType(file.type)}" class="file-icon ${file.type}"></i>
+          <span class="file-name-text">${file.name}</span>
+        </div>
+        <div class="col-size">${file.formattedSize || '--'}</div>
+        <div class="col-date">${file.date || '--'}</div>
         <div class="col-actions">
-          <button class="row-action-btn transfer-btn" title="Send this file to Device"><i data-lucide="arrow-right"></i></button>
-          ${!item.isDirectory ? `<button class="row-action-btn view" title="Preview"><i data-lucide="eye"></i></button>` : ''}
-          <button class="row-action-btn delete" title="Delete"><i data-lucide="trash-2"></i></button>
+          <button class="row-action-btn transfer-btn" title="${transferTitle}">
+            <i data-lucide="${transferIcon}"></i>
+          </button>
+          ${!file.isDirectory ? `
+          <button class="row-action-btn preview-btn" title="Quick Preview">
+            <i data-lucide="eye"></i>
+          </button>` : ''}
+          <button class="row-action-btn delete" title="Delete">
+            <i data-lucide="trash-2"></i>
+          </button>
         </div>
       `;
 
-      // Draggable Event
-      row.addEventListener('dragstart', (e) => {
-        row.classList.add('dragging');
-        const selected = this.getSelectedItems('mac');
-        const itemsToDrag = selected.some(s => s.path === item.path) ? selected : [item];
-        this.draggedData = { source: 'mac', items: itemsToDrag };
-        e.dataTransfer.setData('text/plain', item.name);
-        e.dataTransfer.effectAllowed = 'copy';
+      // Click to open directory
+      row.querySelector('.col-name').addEventListener('click', () => {
+        if (file.isDirectory) {
+          pane === 'mac' ? this.refreshMac(file.path) : this.refreshTarget(file.path);
+        } else {
+          PreviewsManager.previewFile(pane, file);
+        }
       });
 
-      row.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-      });
-
-      // Folder drop target support
-      if (item.isDirectory) {
-        row.addEventListener('dragover', (e) => {
-          if (this.draggedData && this.draggedData.source === 'target') {
-            e.preventDefault();
-            e.stopPropagation();
-            row.classList.add('folder-drop-target');
-          }
-        });
-        row.addEventListener('dragleave', () => {
-          row.classList.remove('folder-drop-target');
-        });
-        row.addEventListener('drop', (e) => {
-          if (this.draggedData && this.draggedData.source === 'target') {
-            e.preventDefault();
-            e.stopPropagation();
-            row.classList.remove('folder-drop-target');
-            TransferManager.sendDeviceFilesToMac(this.draggedData.items, item.path);
-            this.draggedData = null;
-          }
-        });
-      }
-
-      // Checkbox click
-      const cb = row.querySelector('.col-select input');
-      cb.addEventListener('click', (e) => {
+      // Checkbox
+      const chk = row.querySelector('.file-chk');
+      chk.addEventListener('change', (e) => {
         e.stopPropagation();
-        if (cb.checked) {
-          this.macSelected.add(item.path);
-          row.classList.add('selected');
-        } else {
-          this.macSelected.delete(item.path);
-          row.classList.remove('selected');
-        }
-        document.getElementById('mac-selected-count').textContent = `${this.macSelected.size} selected`;
+        this.toggleSelect(pane, file.path, chk.checked);
       });
 
-      // Row navigation or preview
-      row.addEventListener('click', () => {
-        if (item.isDirectory) {
-          this.loadMacFiles(item.path);
+      // Transfer Button
+      row.querySelector('.transfer-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (pane === 'mac') {
+          TransferManager.sendMacFilesToDevice([file], this.targetCurrentPath);
         } else {
-          PreviewsManager.openPreview(item, 'mac');
+          TransferManager.sendDeviceFilesToMac([file], this.macCurrentPath);
         }
       });
-
-      // Send to Device Button
-      const sendBtn = row.querySelector('.row-action-btn.transfer-btn');
-      if (sendBtn) {
-        sendBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          TransferManager.sendMacFilesToDevice([item], this.targetCurrentPath);
-        });
-      }
 
       // Preview Button
-      const viewBtn = row.querySelector('.row-action-btn.view');
-      if (viewBtn) {
-        viewBtn.addEventListener('click', (e) => {
+      const prevBtn = row.querySelector('.preview-btn');
+      if (prevBtn) {
+        prevBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          PreviewsManager.openPreview(item, 'mac');
+          PreviewsManager.previewFile(pane, file);
         });
       }
 
       // Delete Button
-      const delBtn = row.querySelector('.row-action-btn.delete');
-      if (delBtn) {
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.deleteItem('mac', item);
-        });
-      }
+      row.querySelector('.delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
+          this.deleteItem(pane, file.path);
+        }
+      });
 
       listEl.appendChild(row);
     });
@@ -430,331 +355,9 @@ const Explorer = {
     lucide.createIcons();
   },
 
-  // ================= TARGET DEVICE FILE METHODS =================
-
-  async loadTargetFiles(pathParam) {
-    const listEl = document.getElementById('target-file-list');
-    listEl.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Reading device storage...</div>';
-
-    const targetPath = pathParam || this.targetCurrentPath;
-    const url = this.targetMode === 'android'
-      ? `/api/adb/files?path=${encodeURIComponent(targetPath)}`
-      : `/api/usb/files?path=${encodeURIComponent(targetPath)}`;
-
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.success) {
-        this.targetCurrentPath = data.path;
-        this.targetItems = data.items || [];
-        this.targetSelected.clear();
-        document.getElementById('target-select-all').checked = false;
-        this.renderTargetBreadcrumbs();
-        this.renderTargetList();
-        this.updateTargetStorageMeter();
-      } else {
-        listEl.innerHTML = `<div style="text-align:center; padding: 30px; color: var(--text-muted); font-size: 13px;">
-          <i data-lucide="alert-circle" style="width: 32px; height: 32px; color: var(--warning); margin-bottom: 8px;"></i>
-          <p>${data.error || 'No device storage found'}</p>
-        </div>`;
-        lucide.createIcons();
-      }
-    } catch (err) {
-      listEl.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--danger);">${err.message}</div>`;
-    }
-  },
-
-  async updateTargetStorageMeter() {
-    if (this.targetMode === 'android') {
-      try {
-        const res = await fetch('/api/adb/storage');
-        const data = await res.json();
-        if (data.success && data.storage) {
-          const s = data.storage;
-          const meter = document.getElementById('target-storage-meter');
-          const text = document.getElementById('target-storage-text');
-          meter.style.width = s.percent;
-          text.textContent = `${s.free} free of ${s.total} (${s.percent} used)`;
-        }
-      } catch (e) {}
-    }
-  },
-
-  renderTargetBreadcrumbs() {
-    const wrap = document.getElementById('target-breadcrumbs');
-    wrap.innerHTML = '';
-
-    const parts = this.targetCurrentPath.split('/').filter(Boolean);
-    let accum = '';
-
-    const rootItem = document.createElement('span');
-    rootItem.className = 'breadcrumb-item';
-    rootItem.textContent = '/';
-    rootItem.addEventListener('click', () => this.loadTargetFiles('/'));
-    wrap.appendChild(rootItem);
-
-    parts.forEach((part, index) => {
-      accum += '/' + part;
-      const thisPath = accum;
-      
-      const sep = document.createElement('span');
-      sep.textContent = '>';
-      wrap.appendChild(sep);
-
-      const item = document.createElement('span');
-      const isCurrent = index === parts.length - 1;
-      item.className = `breadcrumb-item ${isCurrent ? 'current' : ''}`;
-      item.textContent = part;
-      
-      if (!isCurrent) {
-        item.addEventListener('click', () => this.loadTargetFiles(thisPath));
-      }
-      wrap.appendChild(item);
-    });
-  },
-
-  renderTargetList() {
-    const listEl = document.getElementById('target-file-list');
-    listEl.innerHTML = '';
-
-    let filtered = this.targetItems.filter(item => {
-      const matchSearch = !this.targetSearch || item.name.toLowerCase().includes(this.targetSearch);
-      const matchFilter = this.targetFilter === 'all' || item.type === this.targetFilter || (item.isDirectory && this.targetFilter === 'all');
-      return matchSearch && matchFilter;
-    });
-
-    document.getElementById('target-item-count').textContent = `${filtered.length} items`;
-    document.getElementById('target-selected-count').textContent = `${this.targetSelected.size} selected`;
-
-    if (filtered.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center; padding: 30px; color: var(--text-muted); font-size: 13px;">Folder is empty</div>';
-      return;
-    }
-
-    filtered.forEach(item => {
-      const row = document.createElement('div');
-      row.className = `file-row ${this.targetSelected.has(item.path) ? 'selected' : ''}`;
-      row.setAttribute('draggable', 'true');
-
-      const iconClass = this.getIconForType(item.type, item.isDirectory);
-      const isChecked = this.targetSelected.has(item.path);
-
-      row.innerHTML = `
-        <div class="col-select"><input type="checkbox" ${isChecked ? 'checked' : ''}></div>
-        <div class="col-name" title="${item.name}">
-          <i data-lucide="${iconClass}" class="file-icon ${item.type}"></i>
-          <span class="file-name-text">${item.name}</span>
-        </div>
-        <div class="col-size">${item.formattedSize}</div>
-        <div class="col-date">${item.date}</div>
-        <div class="col-actions">
-          <button class="row-action-btn transfer-btn" title="Transfer this file to Mac"><i data-lucide="arrow-left"></i></button>
-          ${!item.isDirectory ? `
-            <button class="row-action-btn view" title="Preview"><i data-lucide="eye"></i></button>
-          ` : ''}
-          <button class="row-action-btn delete" title="Delete"><i data-lucide="trash-2"></i></button>
-        </div>
-      `;
-
-      // Draggable Event
-      row.addEventListener('dragstart', (e) => {
-        row.classList.add('dragging');
-        const selected = this.getSelectedItems('target');
-        const itemsToDrag = selected.some(s => s.path === item.path) ? selected : [item];
-        this.draggedData = { source: 'target', items: itemsToDrag };
-        e.dataTransfer.setData('text/plain', item.name);
-        e.dataTransfer.effectAllowed = 'copy';
-      });
-
-      row.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-      });
-
-      // Folder drop target support
-      if (item.isDirectory) {
-        row.addEventListener('dragover', (e) => {
-          if (this.draggedData && this.draggedData.source === 'mac') {
-            e.preventDefault();
-            e.stopPropagation();
-            row.classList.add('folder-drop-target');
-          }
-        });
-        row.addEventListener('dragleave', () => {
-          row.classList.remove('folder-drop-target');
-        });
-        row.addEventListener('drop', (e) => {
-          if (this.draggedData && this.draggedData.source === 'mac') {
-            e.preventDefault();
-            e.stopPropagation();
-            row.classList.remove('folder-drop-target');
-            TransferManager.sendMacFilesToDevice(this.draggedData.items, item.path);
-            this.draggedData = null;
-          }
-        });
-      }
-
-      // Checkbox click
-      const cb = row.querySelector('.col-select input');
-      cb.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (cb.checked) {
-          this.targetSelected.add(item.path);
-          row.classList.add('selected');
-        } else {
-          this.targetSelected.delete(item.path);
-          row.classList.remove('selected');
-        }
-        document.getElementById('target-selected-count').textContent = `${this.targetSelected.size} selected`;
-      });
-
-      // Row click
-      row.addEventListener('click', () => {
-        if (item.isDirectory) {
-          this.loadTargetFiles(item.path);
-        } else {
-          PreviewsManager.openPreview(item, this.targetMode);
-        }
-      });
-
-      // Pull to Mac Button
-      const pullBtn = row.querySelector('.row-action-btn.transfer-btn');
-      if (pullBtn) {
-        pullBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          TransferManager.sendDeviceFilesToMac([item], this.macCurrentPath);
-        });
-      }
-
-      // Preview Button
-      const viewBtn = row.querySelector('.row-action-btn.view');
-      if (viewBtn) {
-        viewBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          PreviewsManager.openPreview(item, this.targetMode);
-        });
-      }
-
-      // Delete Button
-      const delBtn = row.querySelector('.row-action-btn.delete');
-      if (delBtn) {
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.deleteItem('target', item);
-        });
-      }
-
-      listEl.appendChild(row);
-    });
-
-    lucide.createIcons();
-  },
-
-  // ================= GENERAL HELPERS =================
-
-  toggleSelectAll(pane, checked) {
-    const items = pane === 'mac' ? this.macItems : this.targetItems;
-    const selectedSet = pane === 'mac' ? this.macSelected : this.targetSelected;
-
-    selectedSet.clear();
-    if (checked) {
-      items.forEach(it => selectedSet.add(it.path));
-    }
-
-    if (pane === 'mac') this.renderMacList();
-    else this.renderTargetList();
-  },
-
-  getSelectedItems(pane) {
-    const items = pane === 'mac' ? this.macItems : this.targetItems;
-    const selectedSet = pane === 'mac' ? this.macSelected : this.targetSelected;
-    return items.filter(it => selectedSet.has(it.path));
-  },
-
-  async promptNewFolder(pane) {
-    const modal = document.getElementById('modal-prompt');
-    const input = document.getElementById('prompt-input');
-    const confirmBtn = document.getElementById('btn-prompt-confirm');
-
-    input.value = '';
-    modal.classList.add('active');
-    input.focus();
-
-    const handleConfirm = async () => {
-      const name = input.value.trim();
-      if (!name) return;
-      modal.classList.remove('active');
-      confirmBtn.removeEventListener('click', handleConfirm);
-
-      if (pane === 'mac') {
-        const full = this.macCurrentPath + '/' + name;
-        const res = await fetch('/api/mac/mkdir', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: full })
-        });
-        const data = await res.json();
-        if (data.success) {
-          App.showToast(`Folder "${name}" created on Mac`, 'success');
-          this.loadMacFiles(this.macCurrentPath);
-        }
-      } else {
-        const full = this.targetCurrentPath + '/' + name;
-        const res = await fetch('/api/adb/mkdir', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: full })
-        });
-        const data = await res.json();
-        if (data.success) {
-          App.showToast(`Folder "${name}" created on Device`, 'success');
-          this.loadTargetFiles(this.targetCurrentPath);
-        }
-      }
-    };
-
-    confirmBtn.onclick = handleConfirm;
-  },
-
-  async deleteItem(pane, item) {
-    if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
-
-    if (pane === 'mac') {
-      const res = await fetch('/api/mac/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: item.path })
-      });
-      const data = await res.json();
-      if (data.success) {
-        App.showToast(`Deleted ${item.name}`, 'success');
-        this.loadMacFiles(this.macCurrentPath);
-      }
-    } else {
-      const res = await fetch('/api/adb/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: item.path })
-      });
-      const data = await res.json();
-      if (data.success) {
-        App.showToast(`Deleted ${item.name}`, 'success');
-        this.loadTargetFiles(this.targetCurrentPath);
-      }
-    }
-  },
-
-  refreshMac() {
-    this.loadMacFiles(this.macCurrentPath);
-  },
-
-  refreshTarget() {
-    this.loadTargetFiles(this.targetCurrentPath);
-  },
-
-  getIconForType(type, isDir) {
-    if (isDir) return 'folder';
-    switch (type) {
+  getIconForType(type) {
+    switch(type) {
+      case 'folder': return 'folder';
       case 'image': return 'image';
       case 'video': return 'film';
       case 'audio': return 'music';
@@ -763,5 +366,192 @@ const Explorer = {
       case 'archive': return 'archive';
       default: return 'file';
     }
+  },
+
+  toggleSelect(pane, filePath, checked) {
+    const selectedSet = pane === 'mac' ? this.macSelected : this.targetSelected;
+    if (checked) {
+      selectedSet.add(filePath);
+    } else {
+      selectedSet.delete(filePath);
+    }
+    this.updateSelectedCount(pane);
+  },
+
+  updateSelectedCount(pane) {
+    const selectedSet = pane === 'mac' ? this.macSelected : this.targetSelected;
+    const el = document.getElementById(`${pane}-selected-count`);
+    if (el) el.textContent = `${selectedSet.size} selected`;
+  },
+
+  filterFiles(files, query, category) {
+    let result = files;
+    if (category && category !== 'all') {
+      result = result.filter(f => f.type === category || f.isDirectory);
+    }
+    if (query && query.trim()) {
+      const q = query.toLowerCase().trim();
+      result = result.filter(f => f.name.toLowerCase().includes(q));
+    }
+    return result;
+  },
+
+  initDragAndDrop() {
+    const macContainer = document.getElementById('mac-file-container');
+    const targetContainer = document.getElementById('target-file-container');
+    const macOverlay = document.getElementById('mac-drop-overlay');
+    const targetOverlay = document.getElementById('target-drop-overlay');
+
+    // Panes Drag Events
+    [
+      { container: macContainer, overlay: macOverlay, destPane: 'mac' },
+      { container: targetContainer, overlay: targetOverlay, destPane: 'target' }
+    ].forEach(({ container, overlay, destPane }) => {
+      container.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        overlay.classList.add('active');
+      });
+
+      container.addEventListener('dragleave', (e) => {
+        if (!container.contains(e.relatedTarget)) {
+          overlay.classList.remove('active');
+        }
+      });
+
+      container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        overlay.classList.remove('active');
+
+        // Check if internal row drag
+        const draggedData = e.dataTransfer.getData('text/plain');
+        if (draggedData) {
+          try {
+            const data = JSON.parse(draggedData);
+            if (data.sourcePane !== destPane) {
+              if (destPane === 'target') {
+                TransferManager.sendMacFilesToDevice([{ path: data.filePath, name: data.fileName }], this.targetCurrentPath);
+              } else {
+                TransferManager.sendDeviceFilesToMac([{ path: data.filePath, name: data.fileName }], this.macCurrentPath);
+              }
+              return;
+            }
+          } catch (err) {}
+        }
+
+        // Browser Native Files Drop
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const files = Array.from(e.dataTransfer.files);
+          if (destPane === 'target') {
+            TransferManager.uploadBrowserFilesToDevice(files, this.targetCurrentPath);
+          } else {
+            this.uploadFilesToMac(files, this.macCurrentPath);
+          }
+        }
+      });
+    });
+
+    // Row dragstart
+    document.addEventListener('dragstart', (e) => {
+      const row = e.target.closest('.file-row');
+      if (row) {
+        row.classList.add('dragging');
+        const payload = {
+          sourcePane: row.dataset.pane,
+          filePath: row.dataset.path,
+          fileName: row.querySelector('.file-name-text').textContent
+        };
+        e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+      }
+    });
+
+    document.addEventListener('dragend', (e) => {
+      const row = e.target.closest('.file-row');
+      if (row) row.classList.remove('dragging');
+    });
+  },
+
+  async uploadFilesToMac(files, targetDir) {
+    App.showToast(`Saving ${files.length} file(s) to Mac...`, 'info');
+    const formData = new FormData();
+    formData.append('targetDir', targetDir || '');
+    for (const f of files) formData.append('files', f);
+
+    try {
+      const res = await fetch('/api/transfer/upload-to-mac', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        App.showToast(`Saved ${files.length} file(s) to Mac`, 'success');
+        this.refreshMac(this.macCurrentPath);
+      }
+    } catch (e) {
+      App.showToast('Upload error', 'error');
+    }
+  },
+
+  async createFolder(pane, name) {
+    if (!name || !name.trim()) return;
+    const basePath = pane === 'mac' ? this.macCurrentPath : this.targetCurrentPath;
+    const newPath = basePath.endsWith('/') ? basePath + name : `${basePath}/${name}`;
+    const url = pane === 'mac' ? '/api/mac/mkdir' : '/api/adb/mkdir';
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: newPath })
+      });
+      const data = await res.json();
+      if (data.success) {
+        App.showToast(`Folder "${name}" created`, 'success');
+        pane === 'mac' ? this.refreshMac(basePath) : this.refreshTarget(basePath);
+      } else {
+        App.showToast(`Failed to create folder: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      App.showToast(e.message, 'error');
+    }
+  },
+
+  async deleteItem(pane, itemPath) {
+    const url = pane === 'mac' ? '/api/mac/delete' : '/api/adb/delete';
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: itemPath })
+      });
+      const data = await res.json();
+      if (data.success) {
+        App.showToast('Item deleted', 'info');
+        pane === 'mac' ? this.refreshMac(this.macCurrentPath) : this.refreshTarget(this.targetCurrentPath);
+      } else {
+        App.showToast(`Delete failed: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      App.showToast(e.message, 'error');
+    }
+  },
+
+  showPromptModal(title, onConfirm) {
+    const modal = document.getElementById('modal-prompt');
+    const titleEl = document.getElementById('prompt-title');
+    const input = document.getElementById('prompt-input');
+    const confirmBtn = document.getElementById('btn-prompt-confirm');
+
+    titleEl.textContent = title;
+    input.value = '';
+    modal.classList.add('active');
+    input.focus();
+
+    const handler = () => {
+      const val = input.value.trim();
+      if (val) {
+        onConfirm(val);
+        modal.classList.remove('active');
+      }
+      confirmBtn.removeEventListener('click', handler);
+    };
+
+    confirmBtn.onclick = handler;
   }
 };
