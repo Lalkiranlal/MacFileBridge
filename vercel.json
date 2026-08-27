@@ -1,15 +1,10 @@
 {
-  "version": 2,
-  "public": true,
+  "outputDirectory": "public",
   "cleanUrls": true,
   "rewrites": [
     {
       "source": "/airbridge",
       "destination": "/airbridge.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/$1"
     }
   ]
 }
