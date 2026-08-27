@@ -1,24 +1,74 @@
 {
   "name": "mac-file-bridge",
   "version": "1.0.0",
-  "description": "High-speed file transfer bridge between Mac, Android devices, USB drives, and wireless devices",
-  "main": "server/server.js",
-  "type": "commonjs",
+  "description": "High-speed USB, Android & AirBridge File Transfer Studio for macOS",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "node server/server.js"
+    "electron": "electron .",
+    "dist:dmg": "electron-builder --mac dmg",
+    "dist:dir": "electron-builder --mac dir",
+    "dist:all": "electron-builder --mac dmg zip"
+  },
+  "build": {
+    "appId": "com.lalkiranlal.macfilebridge",
+    "productName": "MacFileBridge",
+    "copyright": "Copyright © 2026 Kiran Lal",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "protocols": [
+      {
+        "name": "MacFileBridge URL Protocol",
+        "schemes": [
+          "macfilebridge"
+        ]
+      }
+    ],
+    "files": [
+      "public/**/*",
+      "server/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    }
   },
   "keywords": [
     "mac",
+    "file-transfer",
     "android",
     "usb",
-    "file-transfer",
     "adb",
-    "mtp",
-    "airdrop",
-    "wireless-sharing"
+    "airbridge"
   ],
-  "author": "Kiran Lalk",
+  "author": "Kiran Lal",
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
@@ -27,5 +77,9 @@
     "open": "^9.1.0",
     "qrcode": "^1.5.3",
     "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
   }
 }
